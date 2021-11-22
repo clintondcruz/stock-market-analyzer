@@ -7,7 +7,6 @@ from datetime import datetime, date, timedelta
 from matplotlib import pyplot as plt
 
 
-
 def plot_main():
     fig, ax =  plt.subplots()
 
