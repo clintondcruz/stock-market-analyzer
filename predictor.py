@@ -11,5 +11,4 @@ def train_model(x, y):
     mae = metrics.mean_absolute_error(y_test, pred_values)
     mse = metrics.mean_squared_error(y_test, pred_values)
     rmse = np.sqrt(metrics.mean_squared_error(y_test, pred_values))
-    print(x, y)
     return (model, mae, mse, rmse, model.score(x_train, y_train))
