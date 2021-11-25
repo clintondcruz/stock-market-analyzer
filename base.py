@@ -1,7 +1,7 @@
 # Importing the required packages
 import matplotlib
 from pandas._config.config import options
-from pkg_resources import require
+# from pkg_resources import require
 import streamlit as st
 from streamlit.state.session_state import SessionState
 import yfinance as yf
@@ -94,13 +94,14 @@ def main():
         
     with description_col:
         st.write(f"{ticker.upper()}, on {data.index[-1].date()} opened at *${data['Open'][-1].round(2)}* and closed at ${data['Close'][-1].round(2)}.\
-                    The total volume of stocks traded that day was {(data['Volume'][-1]/10**6).round(2)}M and the highest close price in the selected timeframe has been ${data['Close'].round(2).max()}.")
+                    The total volume of stocks traded that day was {(data['Volume'][-1]/10**6).round(2)}M and the highest close price in the selected timeframe has been ${data['High'].round(2).max()}.")
 
     #plot_main(data)
     with st.expander('Read more info about the company'):
         st.write(company.info['longBusinessSummary'])
     
     st.table(descriptive(data))
+
     data = desc_graphs(data)
     graph_pane, radio_buttons_pane = st.columns([4,1])
     with graph_pane:
@@ -109,7 +110,7 @@ def main():
         st.number_input(value=10, label="Enter the value of (n)", on_change=handle_change, key="window")
         st.number_input(value=1, label="Enter the degree of trendline", on_change=handle_change, key="degree", min_value=1, max_value=3)
         st.radio("Base plot-", ['Close', 'Adj Close'], on_change=handle_change, key='base')
-        st.radio("Plot Close against-", ['n_sma', 'ema', 'trend'], on_change=handle_change, key='versus')
+        st.radio("Plot base against-", ['n_sma', 'ema', 'trend'], on_change=handle_change, key='versus')
 
     plot_candlestick(data)
 
@@ -324,7 +325,6 @@ def desc_graphs(data):
     data.set_index('Date', inplace=True)
 
     return data
-
 
 
 if __name__ == "__main__":
