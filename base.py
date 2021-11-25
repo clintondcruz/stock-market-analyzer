@@ -1,5 +1,6 @@
 # Importing the required packages
 import matplotlib
+from pandas._config.config import options
 from pkg_resources import require
 import streamlit as st
 from streamlit.state.session_state import SessionState
@@ -39,7 +40,13 @@ def main():
         st.session_state['training_period'] = 30
 
     if "ticker" not in st.session_state:
-        st.session_state['ticker'] = 0
+        st.session_state['ticker'] = ''
+
+    if "data" not in st.session_state:
+        st.session_state['data'] = None
+
+    if "company" not in st.session_state:
+        st.session_state.company = None
 
     st.write("""
         # Welcome to the stock analyzer
@@ -49,143 +56,148 @@ def main():
 
     # Feeding in the required Ticker symbol
     #ticker = st.text_input('Which stock do you want to search for?')
-    ticker = st.text_input('Which stock do you want to search for?', on_change=handle_change, value="AAPL", key="ticker_name")
+    #ticker = st.text_input('Which stock do you want to search for?', value="AAPL")
+    ticker_list = pd.read_csv('nasdaq_ticker_list.csv')['Symbol'][:300].to_list()
+    ticker = st.selectbox('Which stock do you want to search for?', options = ticker_list, index=0)
     date_col1,date_col2 = st.columns(2)
     with date_col1:
-        from_date = st.date_input('From', date(2018,1,1), min_value=date(2000,1,1), max_value=datetime.today() - timedelta(days=2))
+        from_date = st.date_input('From', date(2018,1,1), min_value=date(2000,1,1), max_value=datetime.today() - timedelta(days=32))
     with date_col2:
         to_date = st.date_input('To', datetime.today()-timedelta(days=1), max_value=datetime.today()-timedelta(days=1))
     #if(ticker!='' and to_date!=''):
     # try:
-    if st.session_state.ticker == 0:
-        data = yf.download(ticker, start=from_date, end=to_date+timedelta(days=1), progress=False)
-        company = yf.Ticker(ticker)
+    if st.session_state.ticker != ticker:
+        st.session_state.data = yf.download(ticker, period="max", progress=False)
+        st.session_state.company = yf.Ticker(ticker)
         print(f"downloaded new dataset for {ticker}")
-        st.session_state.ticker = 1
+        st.session_state.ticker = ticker
     # except:
     #     st.write('Please enter a valid ticker symbol')
-        data.describe()
+    #data = st.session_state.data[[(st.session_state.data.index>=from_date) & (st.session_state.data.index<=to_date)]]
+    data = st.session_state.data.reset_index()
+    data = data[(data['Date'].dt.date>=from_date) & (pd.to_datetime(data['Date']).dt.date<=to_date)]
+    data.set_index('Date', inplace=True)
+    company = st.session_state.company
+    data.describe()
 
-        one_day_growth_col, description_col = st.columns([1,2])
-        with one_day_growth_col:
-            try:
-                st.metric(  label="1Day Growth",
-                value=data['Close'][-1].round(2),
-                delta=(data['Close'][-1] - data['Close'][-2]).round(2),
-                delta_color="normal"
-                )
-            except:
-                st.write("#### Please enter a wider date range")
-            
-        with description_col:
-            st.write(f"{ticker.upper()}, on {data.index[-1].date()} opened at *${data['Open'][-1].round(2)}* and closed at ${data['Close'][-1].round(2)}.\
-                        The total volume of stocks traded that day was {(data['Volume'][-1]/10**6).round(2)}M and the highest close price in the selected timeframe has been ${data['Close'].round(2).max()}.")
 
-        #plot_main(data)
-        with st.expander('Read more info about the company'):
-            st.write(company.info['longBusinessSummary'])
+    one_day_growth_col, description_col = st.columns([1,2])
+    with one_day_growth_col:
+        try:
+            st.metric(  label="1Day Growth",
+            value=data['Close'][-1].round(2),
+            delta=(data['Close'][-1] - data['Close'][-2]).round(2),
+            delta_color="normal"
+            )
+        except:
+            st.write("#### Please enter a wider date range")
         
-        st.table(descriptive(data))
-        data = desc_graphs(data)
-        graph_pane, radio_buttons_pane = st.columns([4,1])
-        with graph_pane:
-            plot_graph(data)
-        with radio_buttons_pane:
-            st.number_input(value=10, label="Enter the value of (n)", on_change=handle_change, key="window")
-            st.number_input(value=1, label="Enter the degree of trendline", on_change=handle_change, key="degree", min_value=1, max_value=3)
-            st.radio("Base plot-", ['Close', 'Adj Close'], on_change=handle_change, key='base')
-            st.radio("Plot Close against-", ['n_sma', 'ema', 'trend'], on_change=handle_change, key='versus')
+    with description_col:
+        st.write(f"{ticker.upper()}, on {data.index[-1].date()} opened at *${data['Open'][-1].round(2)}* and closed at ${data['Close'][-1].round(2)}.\
+                    The total volume of stocks traded that day was {(data['Volume'][-1]/10**6).round(2)}M and the highest close price in the selected timeframe has been ${data['Close'].round(2).max()}.")
 
-        plot_candlestick(data)
+    #plot_main(data)
+    with st.expander('Read more info about the company'):
+        st.write(company.info['longBusinessSummary'])
+    
+    st.table(descriptive(data))
+    data = desc_graphs(data)
+    graph_pane, radio_buttons_pane = st.columns([4,1])
+    with graph_pane:
+        plot_graph(data)
+    with radio_buttons_pane:
+        st.number_input(value=10, label="Enter the value of (n)", on_change=handle_change, key="window")
+        st.number_input(value=1, label="Enter the degree of trendline", on_change=handle_change, key="degree", min_value=1, max_value=3)
+        st.radio("Base plot-", ['Close', 'Adj Close'], on_change=handle_change, key='base')
+        st.radio("Plot Close against-", ['n_sma', 'ema', 'trend'], on_change=handle_change, key='versus')
 
-        st.area_chart(data.Volume/10**6)
+    plot_candlestick(data)
 
-        model, mae, rme, rmse, score = predictor.train_model(y = data['Close'][-1*int(st.session_state['training_period']):],
-                                                                x = data[['Open', 'High', 'Low']][-1*int(st.session_state['training_period']):]
-                                                        )
+    st.area_chart(data.Volume/10**6)
 
-        pred_plot_pane, pred_config_pane = st.columns([4,1])
+    training_period_index = -1*int(st.session_state['training_period'])
+    model, mae, rme, rmse, score = predictor.train_model(y = data['Close'][training_period_index:],
+                                                            x = data[['Open', 'High', 'Low']][training_period_index:]
+                                                    )
 
-        fig, temp = predict(model, data[-1*int(st.session_state['training_period']):], st.session_state['n_predictor'])
+    pred_plot_pane, pred_config_pane = st.columns([4,1])
 
-        with pred_plot_pane:
-            st.write("### Predicting using Random Forest model")
-            st.plotly_chart(fig, use_container_width=True)
-        with pred_config_pane:
-            st.selectbox(label="Select training period (historic days)", options=[7, 15, 30, 90, 180, 365, 730], index=2, on_change=handle_change, key="training_select")
-            st.number_input(label="Predict for days (n)?", min_value=1, max_value=15, value=10, on_change=handle_change, key="predict_for_n")
-            st.table(pd.DataFrame({'Values': [mae,rme,rmse,score]
-            }, index=['Mean Absolute Err', 'Root Mean Err', 'RMSE', 'R Squared']))
+    fig, temp = predict(model, data[-1*int(st.session_state['training_period']):], st.session_state['n_predictor'])
 
-        
+    with pred_plot_pane:
+        st.write("### Predicting using Random Forest model")
+        st.plotly_chart(fig, use_container_width=True)
+    with pred_config_pane:
+        st.selectbox(label="Select training period (historic days)", options=[7, 15, 30, 90, 180, 365, 730], index=2, on_change=handle_change, key="training_select")
+        st.number_input(label="Predict for days (n)?", min_value=1, max_value=15, value=10, on_change=handle_change, key="predict_for_n")
+        st.table(pd.DataFrame({'Values': [mae,rme,rmse,score]
+        }, index=['Mean Absolute Err', 'Root Mean Err', 'RMSE', 'R Squared']))
 
-        st.table(temp[-1*int(st.session_state['n_predictor']):])
-
-        # st.write(mae, rme, rmse, score)
-        
-
-        #MACD
-        ShortEMA = data['Adj Close'].ewm(span=12, adjust=False).mean()
-        LongEMA = data['Adj Close'].ewm(span=26, adjust=False).mean()
-        MACD = LongEMA - ShortEMA
-        signal = MACD.ewm(span = 9, adjust=False).mean()
-
-        MACD_graph = plt.figure(figsize=(12.2,4.5))
-        plt.plot(data.index,MACD, label = "{} MACD".format(ticker), color ="r")
-        plt.plot(data.index,signal, label = "Signal Line", color ="b")
-        plt.legend(loc='upper left')
-        plt.xticks(rotation = 45)
     
 
-        data['MACD'] =MACD
-        data["Signal Line"]= signal
+    st.table(temp[-1*int(st.session_state['n_predictor']):])
 
-        # buy_sell graph
-        def buy_sell(signal):
-            Buy = []
-            Sell = []
-            flag =-1
+    
 
-            for i in range(0,len(signal)):
-                if signal['MACD'][i] > signal['Signal Line'][i]:
-                    Sell.append(np.nan)
-                    if flag != 1:
-                        Buy.append(signal['Close'][i])
-                        flag =1
-                    else:
-                        Buy.append(np.nan)
-                elif signal['MACD'][i] < signal['Signal Line'][i]:
+    #MACD
+    ShortEMA = data['Adj Close'].ewm(span=12, adjust=False).mean()
+    LongEMA = data['Adj Close'].ewm(span=26, adjust=False).mean()
+    MACD = LongEMA - ShortEMA
+    signal = MACD.ewm(span = 9, adjust=False).mean()
+
+    MACD_graph = plt.figure(figsize=(12.2,4.5))
+    plt.plot(data.index,MACD, label = "{} MACD".format(ticker), color ="r")
+    plt.plot(data.index,signal, label = "Signal Line", color ="b")
+    plt.legend(loc='upper left')
+    plt.xticks(rotation = 45)
+
+
+    data['MACD'] =MACD
+    data["Signal Line"]= signal
+
+    # buy_sell graph
+    def buy_sell(signal):
+        Buy = []
+        Sell = []
+        flag =-1
+
+        for i in range(0,len(signal)):
+            if signal['MACD'][i] > signal['Signal Line'][i]:
+                Sell.append(np.nan)
+                if flag != 1:
+                    Buy.append(signal['Close'][i])
+                    flag =1
+                else:
                     Buy.append(np.nan)
-                    if flag != 0:
-                        Sell.append(signal['Close'][i])
-                        flag =0
-                    else:
-                        Sell.append(np.nan)
+            elif signal['MACD'][i] < signal['Signal Line'][i]:
+                Buy.append(np.nan)
+                if flag != 0:
+                    Sell.append(signal['Close'][i])
+                    flag =0
                 else:
                     Sell.append(np.nan)
-                    Buy.append(np.nan)
-            return(Buy, Sell)
+            else:
+                Sell.append(np.nan)
+                Buy.append(np.nan)
+        return(Buy, Sell)
 
-        a = buy_sell(data)
-        data['Buy_Signal_Price'] = a[0]
-        data['Sell_Signal_Price'] = a[1]
+    a = buy_sell(data)
+    data['Buy_Signal_Price'] = a[0]
+    data['Sell_Signal_Price'] = a[1]
 
-        
-        buy_sell_graph = plt.figure(figsize = (12.2, 4.5))
-        plt.scatter(data.index, data['Buy_Signal_Price'], label = 'Buy', color ="green",marker = '^', alpha =1)
-        plt.scatter(data.index, data['Sell_Signal_Price'], label = 'Sell', color ="red",marker = 'v', alpha =1)
-        plt.plot(data['Close'], label = 'Close Price', alpha =0.36)
-        plt.title("Close Price Buy & Sell Signals")
-        plt.xlabel('Date')
-        plt.xticks(rotation =45)
-        plt.ylabel("Close Price USD ($)")
-        plt.legend(loc='upper left')
+    
+    buy_sell_graph = plt.figure(figsize = (12.2, 4.5))
+    plt.scatter(data.index, data['Buy_Signal_Price'], label = 'Buy', color ="green",marker = '^', alpha =1)
+    plt.scatter(data.index, data['Sell_Signal_Price'], label = 'Sell', color ="red",marker = 'v', alpha =1)
+    plt.plot(data['Close'], label = 'Close Price', alpha =0.36)
+    plt.title("Close Price Buy & Sell Signals")
+    plt.xlabel('Date')
+    plt.xticks(rotation =45)
+    plt.ylabel("Close Price USD ($)")
+    plt.legend(loc='upper left')
 
-        st.pyplot(MACD_graph)
-        st.pyplot(buy_sell_graph)
-
-    # else:
-    #     pass
+    st.pyplot(MACD_graph)
+    st.pyplot(buy_sell_graph)
 
     
 
@@ -223,11 +235,6 @@ def predict(model, data, n):
     
     temp = temp[temp.index>base]
     required = required.append(temp['Close'][:n])
-    
-    # st.write("temp")
-    # st.table(temp)
-    # st.write("required")
-    # st.table(required)
 
     fig = xp.line(required, x=required.index, y='Close', markers=True)
     fig.update_layout(shapes=[
@@ -262,9 +269,6 @@ def handle_change():
         st.session_state.n_predictor = st.session_state.predict_for_n
     if st.session_state.training_select:
         st.session_state.training_period = st.session_state.training_select
-    if st.session_state.ticker_name:
-        if st.session_state.ticker != st.session_state.ticker_name:
-            st.session_state.ticker = 0
         
 
 
@@ -312,21 +316,16 @@ def desc_graphs(data):
     trend_op = fit_function(x)
 
     n_sma = np.append(np.zeros(close.shape[0]-n_sma.shape[0]), n_sma)
-    # twelve_sma = np.append(np.zeros(close.shape[0]-twelve_sma.shape[0]), twelve_sma)
-    # tsix_sma = np.append(np.zeros(close.shape[0]-tsix_sma.shape[0]), tsix_sma)
 
     data.reset_index(inplace=True) 
     data['n_sma'] = pd.Series(n_sma)
-    # data['12_sma'] = pd.Series(twelve_sma)
-    # data['26_sma'] = pd.Series(tsix_sma)
     data['trend'] = pd.Series(trend_op)
     data['ema'] = data['Adj Close'].ewm(span = window_size).mean()
-    data = data.set_index('Date')
+    data.set_index('Date', inplace=True)
 
     return data
 
 
 
 if __name__ == "__main__":
-    print("--------- IT STARTS HERE ---------")
     main()
