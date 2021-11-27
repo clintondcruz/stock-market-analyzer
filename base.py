@@ -1,7 +1,4 @@
 # Importing the required packages
-import matplotlib
-from pandas._config.config import options
-# from pkg_resources import require
 import streamlit as st
 from streamlit.state.session_state import SessionState
 import yfinance as yf
@@ -11,15 +8,16 @@ from datetime import datetime, date, timedelta
 from matplotlib import pyplot as plt
 import predictor as predictor
 import numpy as np
+import plotly.express as xp
+
 
 st.set_page_config(page_title='Stocks Analyzer', layout="wide")
 
+@st.cache
+def read_ticker_list(file_name):
+    return pd.read_csv(file_name)['Symbol'][:8000]
 
-# def download_data(ticker, from_date, to_date):
-#     data = yf.download(ticker, start=from_date, end=to_date)
-#     return data
 
-#@st.cache(suppress_st_warning=True)
 def main():
     if "base_plot" not in st.session_state:
         st.session_state['base_plot'] = "Close"
@@ -54,26 +52,20 @@ def main():
         get relevant information which you can use for your analyses.
     """)
 
-    # Feeding in the required Ticker symbol
-    #ticker = st.text_input('Which stock do you want to search for?')
-    #ticker = st.text_input('Which stock do you want to search for?', value="AAPL")
-    ticker_list = pd.read_csv('nasdaq_ticker_list.csv')['Symbol'][:300].to_list()
+    ticker_list = read_ticker_list('nasdaq_ticker_list.csv')[:4000].to_list()
     ticker = st.selectbox('Which stock do you want to search for?', options = ticker_list, index=0)
     date_col1,date_col2 = st.columns(2)
     with date_col1:
         from_date = st.date_input('From', date(2018,1,1), min_value=date(2000,1,1), max_value=datetime.today() - timedelta(days=32))
     with date_col2:
         to_date = st.date_input('To', datetime.today()-timedelta(days=1), max_value=datetime.today()-timedelta(days=1))
-    #if(ticker!='' and to_date!=''):
-    # try:
+
     if st.session_state.ticker != ticker:
         st.session_state.data = yf.download(ticker, period="max", progress=False)
         st.session_state.company = yf.Ticker(ticker)
         print(f"downloaded new dataset for {ticker}")
         st.session_state.ticker = ticker
-    # except:
-    #     st.write('Please enter a valid ticker symbol')
-    #data = st.session_state.data[[(st.session_state.data.index>=from_date) & (st.session_state.data.index<=to_date)]]
+    
     data = st.session_state.data.reset_index()
     data = data[(data['Date'].dt.date>=from_date) & (pd.to_datetime(data['Date']).dt.date<=to_date)]
     data.set_index('Date', inplace=True)
@@ -96,13 +88,12 @@ def main():
         st.write(f"{ticker.upper()}, on {data.index[-1].date()} opened at *${data['Open'][-1].round(2)}* and closed at ${data['Close'][-1].round(2)}.\
                     The total volume of stocks traded that day was {(data['Volume'][-1]/10**6).round(2)}M and the highest close price in the selected timeframe has been ${data['High'].round(2).max()}.")
 
-    #plot_main(data)
     with st.expander('Read more info about the company'):
         st.write(company.info['longBusinessSummary'])
     
     st.table(descriptive(data))
 
-    data = desc_graphs(data)
+    data = base_graphs(data)
     graph_pane, radio_buttons_pane = st.columns([4,1])
     with graph_pane:
         plot_graph(data)
@@ -116,14 +107,16 @@ def main():
 
     st.area_chart(data.Volume/10**6)
 
-    training_period_index = -1*int(st.session_state['training_period'])
-    model, mae, rme, rmse, score = predictor.train_model(y = data['Close'][training_period_index:],
-                                                            x = data[['Open', 'High', 'Low']][training_period_index:]
-                                                    )
+    training_period_index = int(st.session_state['training_period'])
+    # model, mae, rme, rmse, score = predictor.train_model(y = data['Close'][training_period_index:],
+    #                                                         x = data[['Open', 'High', 'Low']][training_period_index:]
+    #                                                 )
+    model, mae, rme, rmse, score = create_model(st.session_state.data, training_period_index)
 
     pred_plot_pane, pred_config_pane = st.columns([4,1])
 
-    fig, temp = predict(model, data[-1*int(st.session_state['training_period']):], st.session_state['n_predictor'])
+    # fig, temp = predict(model, data[-1*int(st.session_state['training_period']):], st.session_state['n_predictor'])
+    fig, temp = predict(model, st.session_state.data.tail(training_period_index), st.session_state['n_predictor'])
 
     with pred_plot_pane:
         st.write("### Predicting using Random Forest model")
@@ -141,20 +134,20 @@ def main():
     
 
     #MACD
+    macd_bs(data)
+
+
+def macd_bs(data): 
     ShortEMA = data['Adj Close'].ewm(span=12, adjust=False).mean()
     LongEMA = data['Adj Close'].ewm(span=26, adjust=False).mean()
-    MACD = LongEMA - ShortEMA
+    MACD = ShortEMA - LongEMA
     signal = MACD.ewm(span = 9, adjust=False).mean()
 
-    MACD_graph = plt.figure(figsize=(12.2,4.5))
-    plt.plot(data.index,MACD, label = "{} MACD".format(ticker), color ="r")
-    plt.plot(data.index,signal, label = "Signal Line", color ="b")
-    plt.legend(loc='upper left')
-    plt.xticks(rotation = 45)
-
-
-    data['MACD'] =MACD
+    data['MACD'] = MACD
     data["Signal Line"]= signal
+    fig = xp.line(data[['MACD', 'Signal Line']], x=data.index, y=['MACD', 'Signal Line'])
+    st.plotly_chart(fig, use_container_width=True)
+
 
     # buy_sell graph
     def buy_sell(signal):
@@ -197,20 +190,18 @@ def main():
     plt.ylabel("Close Price USD ($)")
     plt.legend(loc='upper left')
 
-    st.pyplot(MACD_graph)
+    # st.pyplot(MACD_graph)
     st.pyplot(buy_sell_graph)
 
-    
 
 def predict(model, data, n):
     import plotly.express as xp
-    sma_window = 9
+    sma_window = 7
     required = data['Close']
     num_rows = max(sma_window, n)
 
     a1 = data['Open'].tail(num_rows).to_list()
-    a1.append(data['Close'][-1])
-    for i in range(num_rows-1):
+    for i in range(num_rows):
         a1.append(sum(a1[-sma_window:])/(sma_window))
 
     a2 = data['High'].tail(num_rows).to_list()
@@ -254,6 +245,11 @@ def predict(model, data, n):
     return (fig,temp)
 
 
+@st.cache(allow_output_mutation=True)
+def create_model(data, n):
+    return predictor.train_model(y = data['Close'].tail(n),
+                                 x = data[['Open', 'High', 'Low']].tail(n)
+    )
 
 
 
@@ -301,18 +297,16 @@ def plot_candlestick(data):
 
 
 
-def desc_graphs(data):
-    from matplotlib.pyplot import figure
+def base_graphs(data):
     import numpy as np
-    import plotly.express as px
 
     close = data[st.session_state.base_plot].to_numpy()
 
     window_size = st.session_state.window_size
     n_sma = np.convolve(close, np.ones(window_size)/window_size, mode='valid')
     
-    x = np.arange(data['Close'].size)
-    fit = np.polyfit(x, data['Close'], deg=st.session_state.trend_degree)
+    x = np.arange(data[st.session_state.base_plot].size)
+    fit = np.polyfit(x, data[st.session_state.base_plot], deg=st.session_state.trend_degree)
     fit_function = np.poly1d(fit)
     trend_op = fit_function(x)
 
@@ -321,7 +315,7 @@ def desc_graphs(data):
     data.reset_index(inplace=True) 
     data['n_sma'] = pd.Series(n_sma)
     data['trend'] = pd.Series(trend_op)
-    data['ema'] = data['Adj Close'].ewm(span = window_size).mean()
+    data['ema'] = data[st.session_state.base_plot].ewm(span = window_size).mean()
     data.set_index('Date', inplace=True)
 
     return data
