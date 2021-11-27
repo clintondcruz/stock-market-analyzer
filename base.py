@@ -46,19 +46,22 @@ def main():
     if "company" not in st.session_state:
         st.session_state.company = None
 
+
     st.write("""
         # Welcome to the stock analyzer
         In this app, you can search for a particular stock/option and specify the required timeline to
         get relevant information which you can use for your analyses.
     """)
 
-    ticker_list = read_ticker_list('nasdaq_ticker_list.csv')[:4000].to_list()
-    ticker = st.selectbox('Which stock do you want to search for?', options = ticker_list, index=0)
-    date_col1,date_col2 = st.columns(2)
-    with date_col1:
-        from_date = st.date_input('From', date(2018,1,1), min_value=date(2000,1,1), max_value=datetime.today() - timedelta(days=32))
-    with date_col2:
-        to_date = st.date_input('To', datetime.today()-timedelta(days=1), max_value=datetime.today()-timedelta(days=1))
+    with st.sidebar:
+        ticker_list = read_ticker_list('nasdaq_ticker_list.csv')[:4000].to_list()
+        ticker = st.selectbox('Which stock do you want to search for?', options = ticker_list, index=0)
+        date_col1,date_col2 = st.columns(2)
+        with date_col1:
+            from_date = st.date_input('From', date(2018,1,1), min_value=date(2000,1,1), max_value=datetime.today() - timedelta(days=32))
+        with date_col2:
+            to_date = st.date_input('To', datetime.today()-timedelta(days=1), max_value=datetime.today()-timedelta(days=1))
+
 
     if st.session_state.ticker != ticker:
         st.session_state.data = yf.download(ticker, period="max", progress=False)
@@ -76,22 +79,46 @@ def main():
     one_day_growth_col, description_col = st.columns([1,2])
     with one_day_growth_col:
         try:
-            st.metric(  label="1Day Growth",
-            value=data['Close'][-1].round(2),
-            delta=(data['Close'][-1] - data['Close'][-2]).round(2),
+            st.metric(  label="1Day Growth (Latest Close Price)",
+            value=st.session_state.data['Close'][-1].round(2),
+            delta=(st.session_state.data['Close'][-1] - st.session_state.data['Close'][-2]).round(2),
             delta_color="normal"
             )
         except:
             st.write("#### Please enter a wider date range")
         
     with description_col:
-        st.write(f"{ticker.upper()}, on {data.index[-1].date()} opened at *${data['Open'][-1].round(2)}* and closed at ${data['Close'][-1].round(2)}.\
+        st.write(f"{company.info['shortName']}, on {data.index[-1].date()} opened at *${data['Open'][-1].round(2)}* and closed at ${data['Close'][-1].round(2)}.\
                     The total volume of stocks traded that day was {(data['Volume'][-1]/10**6).round(2)}M and the highest close price in the selected timeframe has been ${data['High'].round(2).max()}.")
 
     with st.expander('Read more info about the company'):
         st.write(company.info['longBusinessSummary'])
     
     st.table(descriptive(data))
+
+    fin_col1, fin_col2 = st.columns(2)
+    info = company.info
+    with fin_col1:
+        st.write(   pd.DataFrame({
+                    'Information': [
+                        #info['sector'],
+                        info['marketCap']
+                    ]
+        }, index=['Sector', 'Market Cap']))
+
+    
+    with fin_col2:
+        st.write(   pd.DataFrame({
+                    'Financial metrics': [
+                        info['bookValue'],
+                        info['priceToBook'],
+                        (info['enterpriseValue']/10**6),
+                        info['pegRatio'],
+                        info['payoutRatio'],
+                        info['revenuePerShare'],
+                        info['marketCap']
+                    ]
+                }, index=['Book Value','P2B', 'Enterprise Value (M)', 'Peg Ratio', 'Payout Ratio', 'Revenue/Share', 'Market Cap.']))
 
     data = base_graphs(data)
     graph_pane, radio_buttons_pane = st.columns([4,1])
@@ -108,14 +135,9 @@ def main():
     st.area_chart(data.Volume/10**6)
 
     training_period_index = int(st.session_state['training_period'])
-    # model, mae, rme, rmse, score = predictor.train_model(y = data['Close'][training_period_index:],
-    #                                                         x = data[['Open', 'High', 'Low']][training_period_index:]
-    #                                                 )
     model, mae, rme, rmse, score = create_model(st.session_state.data, training_period_index)
 
     pred_plot_pane, pred_config_pane = st.columns([4,1])
-
-    # fig, temp = predict(model, data[-1*int(st.session_state['training_period']):], st.session_state['n_predictor'])
     fig, temp = predict(model, st.session_state.data.tail(training_period_index), st.session_state['n_predictor'])
 
     with pred_plot_pane:
@@ -128,8 +150,8 @@ def main():
         }, index=['Mean Absolute Err', 'Root Mean Err', 'RMSE', 'R Squared']))
 
     
-
-    st.table(temp[-1*int(st.session_state['n_predictor']):])
+    
+    st.table(temp[-training_period_index])
 
     
 
