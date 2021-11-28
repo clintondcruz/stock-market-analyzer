@@ -150,7 +150,6 @@ def main():
         }, index=['Mean Absolute Err', 'Root Mean Err', 'RMSE', 'R Squared']))
 
     
-
     st.table(temp[-1*int(st.session_state['n_predictor']):])
 
     
