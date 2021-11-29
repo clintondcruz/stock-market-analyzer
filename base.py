@@ -3,7 +3,7 @@ import streamlit as st
 from streamlit.state.session_state import SessionState
 import yfinance as yf
 import pandas as pd
-import matplotlib.gridspec as gridspec
+#import matplotlib.gridspec as gridspec
 from datetime import datetime, date, timedelta
 from matplotlib import pyplot as plt
 import predictor as predictor
@@ -15,10 +15,11 @@ st.set_page_config(page_title='Stocks Analyzer', layout="wide")
 
 @st.cache
 def read_ticker_list(file_name):
-    return pd.read_csv(file_name)['Symbol'][:8000]
+    return pd.read_csv(file_name)['Symbol - Name'][:8000]
 
 
 def main():
+    # DEFINING SESSION VARIABLES TO STORE DATA IN RUN-TIME
     if "base_plot" not in st.session_state:
         st.session_state['base_plot'] = "Close"
 
@@ -47,37 +48,46 @@ def main():
         st.session_state.company = None
 
 
+    # INTRODUCTION TO THE APPLICATION
     st.write("""
         # Welcome to the stock analyzer
-        In this app, you can search for a particular stock/option and specify the required timeline to
+        In this app, you can search for a particular stock and specify the required timeline to
         get relevant information which you can use for your analyses.
     """)
 
+
+    # SIDEBAR FOR TICKER SYMBOL AND DATE RANGE SELECTOR
     with st.sidebar:
-        ticker_list = read_ticker_list('nasdaq_ticker_list.csv')[:4000].to_list()
-        ticker = st.selectbox('Which stock do you want to search for?', options = ticker_list, index=0)
+        ticker_list = read_ticker_list('nasdaq_ticker_list.csv').to_list()
+        ticker = st.selectbox('Which stock do you want to search for?', options = ticker_list, index=0).split(" - ")[0]
         date_col1,date_col2 = st.columns(2)
         with date_col1:
-            from_date = st.date_input('From', date(2018,1,1), min_value=date(2000,1,1), max_value=datetime.today() - timedelta(days=32))
+            from_date = st.date_input('From', date(2021,9,11), min_value=date(2000,1,1), max_value=datetime.today() - timedelta(days=32))
         with date_col2:
-            to_date = st.date_input('To', datetime.today()-timedelta(days=1), max_value=datetime.today()-timedelta(days=1))
+            to_date = st.date_input('To', datetime.today(), max_value=datetime.today())
 
 
+    # CHECKING IF THE TICKER SYMBOL HAS CHANGED
+    # IF CHANGE IN TICKER => DOWNLOAD NEW DATASET AND APPLY THE DATE RANGE FILTER
+    # ELSE CONTINUE
     if st.session_state.ticker != ticker:
         st.session_state.data = yf.download(ticker, period="max", progress=False)
         st.session_state.company = yf.Ticker(ticker)
         print(f"downloaded new dataset for {ticker}")
         st.session_state.ticker = ticker
     
+
+    # ONCE THE DATA HAS BEEN DOWNLAODED AND FILTERED, PROCEED AHEAD
     data = st.session_state.data.reset_index()
     data = data[(data['Date'].dt.date>=from_date) & (pd.to_datetime(data['Date']).dt.date<=to_date)]
     data.set_index('Date', inplace=True)
     company = st.session_state.company
     data.describe()
 
+    
 
-    one_day_growth_col, description_col = st.columns([1,2])
-    with one_day_growth_col:
+    COL_33_PERCENT, COL_67_PERCENT = st.columns([1,2]) # DEFINED 2 COLUMNS OF WIDTH 33% AND 67% RESP.
+    with COL_33_PERCENT:
         try:
             st.metric(  label="1Day Growth (Latest Close Price)",
             value=st.session_state.data['Close'][-1].round(2),
@@ -87,18 +97,26 @@ def main():
         except:
             st.write("#### Please enter a wider date range")
         
-    with description_col:
+    with COL_67_PERCENT:
         st.write(f"{company.info['shortName']}, on {data.index[-1].date()} opened at *${data['Open'][-1].round(2)}* and closed at ${data['Close'][-1].round(2)}.\
                     The total volume of stocks traded that day was {(data['Volume'][-1]/10**6).round(2)}M and the highest close price in the selected timeframe has been ${data['High'].round(2).max()}.")
 
+
+    # MORE INFO EXPANDER
     with st.expander('Read more info about the company'):
-        st.write(company.info['longBusinessSummary'])
+        try:
+            st.write(company.info['longBusinessSummary'])
+        except:
+            st.write('No business info found.')
     
+
+    # DISPLAYS THE DESCRIPTIVE TABLE
     st.table(descriptive(data))
 
-    fin_col1, fin_col2 = st.columns(2)
+
+    COL_50_PERCENT_LEFT, COL_50_PERCENT_RIGHT = st.columns(2) # DEFINED 2 COLUMNS OF WIDTH 50% EACH
     info = company.info
-    with fin_col1:
+    with COL_50_PERCENT_LEFT:
         st.write(   pd.DataFrame({
                     'Information': [
                         #info['sector'],
@@ -107,7 +125,7 @@ def main():
         }, index=['Sector', 'Market Cap']))
 
     
-    with fin_col2:
+    with COL_50_PERCENT_RIGHT:
         st.write(   pd.DataFrame({
                     'Financial metrics': [
                         info['bookValue'],
@@ -120,12 +138,16 @@ def main():
                     ]
                 }, index=['Book Value','P2B', 'Enterprise Value (M)', 'Peg Ratio', 'Payout Ratio', 'Revenue/Share', 'Market Cap.']))
 
+
+    # PLOTTING SMA, TRENDLINE GRAPHS AGAINST CLOSE AND ADJ CLOSE
     data = base_graphs(data)
-    graph_pane, radio_buttons_pane = st.columns([4,1])
-    with graph_pane:
+    COL_80_PERCENT, COL_20_PERCENT = st.columns([4,1]) # DEFINED 2 COLUMNS OF WIDTH 80% AND 20% RESP.
+    with COL_80_PERCENT:
         plot_graph(data)
-    with radio_buttons_pane:
-        st.number_input(value=10, label="Enter the value of (n)", on_change=handle_change, key="window")
+
+    
+    with COL_20_PERCENT:
+        st.number_input(value=10, label="Enter the value of (n)", on_change=handle_change, key="window", min_value=3, max_value=len(data)//4)
         st.number_input(value=1, label="Enter the degree of trendline", on_change=handle_change, key="degree", min_value=1, max_value=3)
         st.radio("Base plot-", ['Close', 'Adj Close'], on_change=handle_change, key='base')
         st.radio("Plot base against-", ['n_sma', 'ema', 'trend'], on_change=handle_change, key='versus')
@@ -144,7 +166,7 @@ def main():
         st.write("### Predicting using Random Forest model")
         st.plotly_chart(fig, use_container_width=True)
     with pred_config_pane:
-        st.selectbox(label="Select training period (historic days)", options=[7, 15, 30, 90, 180, 365, 730], index=2, on_change=handle_change, key="training_select")
+        st.selectbox(label="Select training period (historic days)", options=[15, 30, 90, 180, 365, 730], index=0, on_change=handle_change, key="training_select")
         st.number_input(label="Predict for days (n)?", min_value=1, max_value=15, value=10, on_change=handle_change, key="predict_for_n")
         st.table(pd.DataFrame({'Values': [mae,rme,rmse,score]
         }, index=['Mean Absolute Err', 'Root Mean Err', 'RMSE', 'R Squared']))
@@ -266,7 +288,7 @@ def predict(model, data, n):
     return (fig,temp)
 
 
-@st.cache(allow_output_mutation=True)
+@st.experimental_singleton   # CACHING THE MODEL UNTIL THE INPUT PARAMEMTERS ARE CHANGED
 def create_model(data, n):
     return predictor.train_model(y = data['Close'].tail(n),
                                  x = data[['Open', 'High', 'Low']].tail(n)
