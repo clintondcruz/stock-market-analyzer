@@ -27,7 +27,7 @@ def main():
         st.session_state['plot_this'] = "n_sma"
 
     if "window_size" not in st.session_state:
-        st.session_state['window_size'] = 10
+        st.session_state['window_size'] = 2
     
     if "n_predictor" not in st.session_state:
         st.session_state['n_predictor'] = 10
@@ -60,21 +60,34 @@ def main():
     with st.sidebar:
         ticker_list = read_ticker_list('nasdaq_ticker_list.csv').to_list()
         ticker = st.selectbox('Which stock do you want to search for?', options = ticker_list, index=0).split(" - ")[0]
-        date_col1,date_col2 = st.columns(2)
-        with date_col1:
-            from_date = st.date_input('From', date(2021,9,11), min_value=date(2000,1,1), max_value=datetime.today() - timedelta(days=32))
-        with date_col2:
-            to_date = st.date_input('To', datetime.today(), max_value=datetime.today())
+
+        # CHECKING IF THE TICKER SYMBOL HAS CHANGED
+        # IF CHANGE IN TICKER => DOWNLOAD NEW DATASET AND APPLY THE DATE RANGE FILTER
+        # ELSE CONTINUE
+        if st.session_state.ticker != ticker:
+            st.session_state.data = yf.download(ticker, period="max", progress=False)
+            st.session_state.company = yf.Ticker(ticker)
+            print(f"downloaded new dataset for {ticker}")
+            st.session_state.ticker = ticker
+
+        dummy = st.session_state.data.reset_index()
+        min_date = dummy['Date'].iloc[0]
+        max_date = dummy['Date'].iloc[-1]
+
+        COL_50_PERCENT_LEFT, COL_50_PERCENT_RIGHT = st.columns(2)
+        with COL_50_PERCENT_LEFT:
+            from_date = st.date_input(  'From',
+                                        value=max(date(2021,9,11), min_date),
+                                        min_value=date(2000,1,1),
+                                        max_value=max(datetime.today() - timedelta(days=32), min_date))
+        with COL_50_PERCENT_RIGHT:
+            to_date = st.date_input(    'To',
+                                        value=max_date,
+                                        min_value=min_date + timedelta(days=32),
+                                        max_value=max_date)
 
 
-    # CHECKING IF THE TICKER SYMBOL HAS CHANGED
-    # IF CHANGE IN TICKER => DOWNLOAD NEW DATASET AND APPLY THE DATE RANGE FILTER
-    # ELSE CONTINUE
-    if st.session_state.ticker != ticker:
-        st.session_state.data = yf.download(ticker, period="max", progress=False)
-        st.session_state.company = yf.Ticker(ticker)
-        print(f"downloaded new dataset for {ticker}")
-        st.session_state.ticker = ticker
+    
     
 
     # ONCE THE DATA HAS BEEN DOWNLAODED AND FILTERED, PROCEED AHEAD
@@ -85,21 +98,7 @@ def main():
     data.describe()
 
     
-
-    COL_33_PERCENT, COL_67_PERCENT = st.columns([1,2]) # DEFINED 2 COLUMNS OF WIDTH 33% AND 67% RESP.
-    with COL_33_PERCENT:
-        try:
-            st.metric(  label="1Day Growth (Latest Close Price)",
-            value=st.session_state.data['Close'][-1].round(2),
-            delta=(st.session_state.data['Close'][-1] - st.session_state.data['Close'][-2]).round(2),
-            delta_color="normal"
-            )
-        except:
-            st.write("#### Please enter a wider date range")
-        
-    with COL_67_PERCENT:
-        st.write(f"{company.info['shortName']}, on {data.index[-1].date()} opened at *${data['Open'][-1].round(2)}* and closed at ${data['Close'][-1].round(2)}.\
-                    The total volume of stocks traded that day was {(data['Volume'][-1]/10**6).round(2)}M and the highest close price in the selected timeframe has been ${data['High'].round(2).max()}.")
+    base_descriptive(data, company)
 
 
     # MORE INFO EXPANDER
@@ -147,7 +146,7 @@ def main():
 
     
     with COL_20_PERCENT:
-        st.number_input(value=10, label="Enter the value of (n)", on_change=handle_change, key="window", min_value=3, max_value=len(data)//4)
+        st.number_input(value=2, label="Enter the value of (n)", on_change=handle_change, key="window", min_value=2, max_value=max(len(data)//4,1))
         st.number_input(value=1, label="Enter the degree of trendline", on_change=handle_change, key="degree", min_value=1, max_value=3)
         st.radio("Base plot-", ['Close', 'Adj Close'], on_change=handle_change, key='base')
         st.radio("Plot base against-", ['n_sma', 'ema', 'trend'], on_change=handle_change, key='versus')
@@ -178,6 +177,24 @@ def main():
 
     #MACD
     macd_bs(data)
+
+def base_descriptive(data, company):
+    COL_33_PERCENT, COL_67_PERCENT = st.columns([1,2]) # DEFINED 2 COLUMNS OF WIDTH 33% AND 67% RESP.
+    with COL_33_PERCENT:
+        try:
+            st.metric(  label="1Day Growth (Latest Close Price)",
+            value=st.session_state.data['Close'][-1].round(2),
+            delta=(st.session_state.data['Close'][-1] - st.session_state.data['Close'][-2]).round(2),
+            delta_color="normal"
+            )
+        except:
+            st.write("#### Please enter a wider date range")
+        
+    with COL_67_PERCENT:
+        st.write(f"{company.info['shortName']}, on {data.index[-1].date()} opened at *${data['Open'][-1].round(2)}* and closed at ${data['Close'][-1].round(2)}.\
+                    The total volume of stocks traded that day was {(data['Volume'][-1]/10**6).round(2)}M and the highest close price in the selected timeframe has been ${data['High'].round(2).max()}.")
+
+
 
 
 def macd_bs(data): 
@@ -353,7 +370,9 @@ def base_graphs(data):
     fit_function = np.poly1d(fit)
     trend_op = fit_function(x)
 
-    n_sma = np.append(np.zeros(close.shape[0]-n_sma.shape[0]), n_sma)
+
+    temp = np.zeros(close.size - n_sma.size) + np.nan
+    n_sma = np.append(temp, n_sma)
 
     data.reset_index(inplace=True) 
     data['n_sma'] = pd.Series(n_sma)
