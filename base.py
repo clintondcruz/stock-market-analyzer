@@ -1,4 +1,5 @@
 # Importing the required packages
+from pkg_resources import yield_lines
 import streamlit as st
 from streamlit.state.session_state import SessionState
 import yfinance as yf
@@ -50,7 +51,7 @@ def main():
 
     # INTRODUCTION TO THE APPLICATION
     st.write("""
-        # Welcome to the stock analyzer
+        # Welcome to the Stock Analyzer
         In this app, you can search for a particular stock and specify the required timeline to
         get relevant information which you can use for your analyses.
     """)
@@ -83,7 +84,8 @@ def main():
         with COL_50_PERCENT_RIGHT:
             to_date = st.date_input(    'To',
                                         value=max_date,
-                                        min_value=min_date + timedelta(days=32),
+                                        #min_value=from_date + timedelta(days=32),
+                                        min_value=from_date + timedelta(days=1),
                                         max_value=max_date)
 
 
@@ -151,32 +153,18 @@ def main():
         st.radio("Base plot-", ['Close', 'Adj Close'], on_change=handle_change, key='base')
         st.radio("Plot base against-", ['n_sma', 'ema', 'trend'], on_change=handle_change, key='versus')
 
+
+    # CANDLE-STICK PLOT
     plot_candlestick(data)
 
-    st.area_chart(data.Volume/10**6)
+    st.bar_chart(data.Volume/10**6)
 
-    training_period_index = int(st.session_state['training_period'])
-    model, mae, rme, rmse, score = create_model(st.session_state.data, training_period_index)
-
-    pred_plot_pane, pred_config_pane = st.columns([4,1])
-    fig, temp = predict(model, st.session_state.data.tail(training_period_index), st.session_state['n_predictor'])
-
-    with pred_plot_pane:
-        st.write("### Predicting using Random Forest model")
-        st.plotly_chart(fig, use_container_width=True)
-    with pred_config_pane:
-        st.selectbox(label="Select training period (historic days)", options=[15, 30, 90, 180, 365, 730], index=0, on_change=handle_change, key="training_select")
-        st.number_input(label="Predict for days (n)?", min_value=1, max_value=15, value=10, on_change=handle_change, key="predict_for_n")
-        st.table(pd.DataFrame({'Values': [mae,rme,rmse,score]
-        }, index=['Mean Absolute Err', 'Root Mean Err', 'RMSE', 'R Squared']))
-
-    
-    st.table(temp[-1*int(st.session_state['n_predictor']):])
-
-    
+    inferential()
 
     #MACD
     macd_bs(data)
+
+
 
 def base_descriptive(data, company):
     COL_33_PERCENT, COL_67_PERCENT = st.columns([1,2]) # DEFINED 2 COLUMNS OF WIDTH 33% AND 67% RESP.
@@ -194,6 +182,24 @@ def base_descriptive(data, company):
         st.write(f"{company.info['shortName']}, on {data.index[-1].date()} opened at *${data['Open'][-1].round(2)}* and closed at ${data['Close'][-1].round(2)}.\
                     The total volume of stocks traded that day was {(data['Volume'][-1]/10**6).round(2)}M and the highest close price in the selected timeframe has been ${data['High'].round(2).max()}.")
 
+
+
+def inferential():
+    COL_80_PERCENT, COL_20_PERCENT = st.columns([4,1]) # DEFINED 2 COLUMNS OF WIDTH 80% AND 20% RESP.
+    training_period_index = int(st.session_state['training_period'])
+    model, mae, rme, rmse, score = create_model(st.session_state.data, training_period_index)
+    fig, temp = predict(model, st.session_state.data.tail(training_period_index), st.session_state['n_predictor'])
+
+    with COL_80_PERCENT:
+        st.write("### Predicting using Random Forest model")
+        st.plotly_chart(fig, use_container_width=True)
+    with COL_20_PERCENT:
+        st.selectbox(label="Select training period (historic days)", options=[15, 30, 90, 180, 365, 730], index=0, on_change=handle_change, key="training_select")
+        st.number_input(label="Predict for days (n)?", min_value=1, max_value=15, value=10, on_change=handle_change, key="predict_for_n")
+        st.table(pd.DataFrame({'Values': [mae,rme,rmse,score]
+        }, index=['Mean Absolute Err', 'Root Mean Err', 'RMSE', 'R Squared']))
+
+    st.table(temp[-1*int(st.session_state['n_predictor']):])
 
 
 
@@ -328,7 +334,7 @@ def handle_change():
         st.session_state.training_period = st.session_state.training_select
         
 
-
+@st.cache
 def descriptive(data):
     info = data.describe()[['Open', 'Close', 'Adj Close']].round(2).transpose()
 
@@ -346,6 +352,7 @@ def plot_graph(data):
     st.plotly_chart(fig, use_container_width=True)
 
 
+
 def plot_candlestick(data):
     import plotly.graph_objects as go
     fig = go.Figure(data=[go.Candlestick(x=data.index,
@@ -357,6 +364,7 @@ def plot_candlestick(data):
 
 
 
+@st.cache(hash_funcs={dict: lambda _: None}, allow_output_mutation=True)
 def base_graphs(data):
     import numpy as np
 
