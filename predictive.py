@@ -10,22 +10,21 @@ from datetime import timedelta
 # THIS FUNCTION ACTS AS AN INITIALIZER AND COMMUNICATES DIRECTLY WITH BASE.PY
 def inferential():
     COL_80_PERCENT, COL_20_PERCENT = st.columns([4,1])                          # DEFINED 2 COLUMNS OF WIDTH 80% AND 20% RESP.
-    training_period_index = int(st.session_state['training_period'])            # 
-    model, mae, rme, rmse, score = create_model(st.session_state.data, training_period_index)
-    fig, temp = predict(model, st.session_state.data.tail(training_period_index), st.session_state['n_predictor'])
+    training_period_index = int(st.session_state['training_period'])            # FETCHING TRAINING PERIOD (LATST N-NUMBER OF ROWS FROM STOCK'S HISTORICAL DATA) FOR TRAINING THE MODEL
+    model, mae, rme, rmse, score = create_model(st.session_state.data, training_period_index)       # INITIALIZING A MODEL OBJECT AND SAVING THE EVALUATION METRICS
+    fig, predicted_values = predict(model, st.session_state.data.tail(training_period_index), st.session_state['n_predictor'])  # PREDICTING FUTURE VALUES AND SAVING PLOT
 
     with COL_80_PERCENT:
         st.write("### Predicting using Random Forest model")
         st.plotly_chart(fig, use_container_width=True)
     with COL_20_PERCENT:
-        st.selectbox(label="Select training period (historic days)", options=[15, 30, 90, 180, 365, 730], index=0, on_change=handle_change, key="training_select")
-        st.number_input(label="Predict for days (n)?", min_value=1, max_value=15, value=10, on_change=handle_change, key="predict_for_n")
+        st.selectbox(label="Select training period (historic days)", options=[15, 30, 90, 180, 365, 730], index=0, on_change=handle_change, key="training_select")  # SELECTBOX FOR TRAINING PERIOD
+        st.number_input(label="Predict for days (n)?", min_value=1, max_value=15, value=10, on_change=handle_change, key="predict_for_n")                           # VALUE FOR N (DAYS) FOR WHICH THE PREDICTION IS REQUIRED
         st.table(pd.DataFrame({'Values': [mae,rme,rmse,score]
         }, index=['Mean Absolute Err', 'Root Mean Err', 'RMSE', 'R Squared']))
 
     st.markdown("""### Future Projections""")
-    # st.table(temp[-1*int(st.session_state['n_predictor']):])
-    st.table(temp)
+    st.table(predicted_values)
 
 
 # HANDLING ON_CALL CHANGES
@@ -94,8 +93,8 @@ def predict(model, data, n):
     fig.update_layout(shapes=[
         dict(
         type= 'line',
-        yref= 'paper', y0 = 0, y1 = 1,
-        xref= 'x', x0= required.index[-n], x1= required.index[-n],
+        yref= 'paper', y0 = 0, y1 = 1,                                  # (Y1,Y2) FOR RED LINE
+        xref= 'x', x0= required.index[-n], x1= required.index[-n],      # (X1,X2) FOR RED LINE
         line = dict(
             color='red',
             width=1.5,
@@ -109,7 +108,7 @@ def predict(model, data, n):
 
 
 @st.experimental_singleton   # CACHING THE MODEL UNTIL THE INPUT PARAMEMTERS ARE CHANGED
-def create_model(data, n):
-    return train_model( y = data['Close'].tail(n),
-                        x = data[['Open', 'High', 'Low']].tail(n)
+def create_model(data, n):   # PASSING THE REQUIRED INDEPENDENT (X) VARIABLE AND DEPENDENT (Y) VARIABLE FOR MODEL CREATION
+    return train_model( y = data['Close'].tail(n),                  # PASSING LAST N ROWS OF DEPENDENT VARIABLE
+                        x = data[['Open', 'High', 'Low']].tail(n)   # PASSING LAST N ROWS OF INDEPENDENT VARIABLES
     )

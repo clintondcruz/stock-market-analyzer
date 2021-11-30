@@ -1,12 +1,13 @@
+# Importing the required packages
 import matplotlib.pyplot as plt
 import numpy as np, plotly.express as xp, streamlit as st
 
 def macd_bs(data): 
     try:
-        ShortEMA = data['Close'].ewm(span=12, adjust=False).mean()
-        LongEMA = data['Close'].ewm(span=26, adjust=False).mean()
-        MACD = ShortEMA - LongEMA
-        signal = MACD.ewm(span = 9, adjust=False).mean()
+        ShortEMA = data['Close'].ewm(span=12, adjust=False).mean()  # Calculate 12 day Exponentoal moving average
+        LongEMA = data['Close'].ewm(span=26, adjust=False).mean()   # Calculate 26 day Exponentoal moving average
+        MACD = ShortEMA - LongEMA                                   # Calculate Moving day convergence Divergence
+        signal = MACD.ewm(span = 9, adjust=False).mean()            # Calculate signal line i.e. 9 day EMA of MACD
 
         data['MACD'] = MACD
         data["Signal Line"]= signal
@@ -21,7 +22,8 @@ def macd_bs(data):
         Sell = []
         flag =-1
 
-        for i in range(0,len(signal)):
+        #Calculate the Buy & Sell recomendations
+        for i in range(0,len(signal)):                            
             if signal['MACD'][i] > signal['Signal Line'][i]:
                 Sell.append(np.nan)
                 if flag != 1:
@@ -41,12 +43,13 @@ def macd_bs(data):
                 Buy.append(np.nan)
         return(Buy, Sell)
 
-    marker = buy_sell(data)
+    marker = buy_sell(data)                            
     data['Buy_Signal_Price'] = marker[0]
     data['Sell_Signal_Price'] = marker[1]
 
     
-    buy_sell_graph = plt.figure(figsize = (12.2, 4.5))
+    # Configure the graph giving buy sell recommendations
+    buy_sell_graph = plt.figure(figsize = (12.2, 4.5))  
     plt.scatter(data.index, data['Buy_Signal_Price'], label = 'Buy', color ="green",marker = '^', alpha =1)
     plt.scatter(data.index, data['Sell_Signal_Price'], label = 'Sell', color ="red",marker = 'v', alpha =1)
     plt.plot(data['Close'], label = 'Close Price', alpha =0.7)
