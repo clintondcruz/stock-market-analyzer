@@ -1,9 +1,7 @@
 matplotlib==3.3.4
-numpy==1.20.1
 pandas==1.2.4
-plotly==5.4.0
-predictor==0.1.2
-scikit_learn==1.0.1
-setuptools==52.0.0.post20210125
+numpy==1.20.1
 streamlit==1.2.0
 yfinance==0.1.64
+plotly==5.4.0
+sklearn==0.0
