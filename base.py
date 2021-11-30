@@ -28,7 +28,7 @@ def main():
         st.session_state['plot_this'] = "n_sma"
 
     if "window_size" not in st.session_state:
-        st.session_state['window_size'] = 2
+        st.session_state['window_size'] = 1
     
     if "n_predictor" not in st.session_state:
         st.session_state['n_predictor'] = 10
@@ -85,7 +85,7 @@ def main():
             to_date = st.date_input(    'To',
                                         value=max_date,
                                         #min_value=from_date + timedelta(days=32),
-                                        min_value=from_date + timedelta(days=1),
+                                        min_value=from_date + timedelta(days=3),
                                         max_value=max_date)
 
 
@@ -148,7 +148,7 @@ def main():
 
     
     with COL_20_PERCENT:
-        st.number_input(value=2, label="Enter the value of (n)", on_change=handle_change, key="window", min_value=2, max_value=max(len(data)//4,1))
+        st.number_input(value=1, label="Enter the value of (n)", on_change=handle_change, key="window", min_value=1, max_value=max(len(data)//4,1))
         st.number_input(value=1, label="Enter the degree of trendline", on_change=handle_change, key="degree", min_value=1, max_value=3)
         st.radio("Base plot-", ['Close', 'Adj Close'], on_change=handle_change, key='base')
         st.radio("Plot base against-", ['n_sma', 'ema', 'trend'], on_change=handle_change, key='versus')
@@ -364,31 +364,34 @@ def plot_candlestick(data):
 
 
 
-@st.cache(hash_funcs={dict: lambda _: None}, allow_output_mutation=True)
+#@st.cache(hash_funcs={dict: lambda _: None}, allow_output_mutation=True)
 def base_graphs(data):
-    import numpy as np
+    try:
+        import numpy as np
 
-    close = data[st.session_state.base_plot].to_numpy()
+        close = data[st.session_state.base_plot].to_numpy()
 
-    window_size = st.session_state.window_size
-    n_sma = np.convolve(close, np.ones(window_size)/window_size, mode='valid')
-    
-    x = np.arange(data[st.session_state.base_plot].size)
-    fit = np.polyfit(x, data[st.session_state.base_plot], deg=st.session_state.trend_degree)
-    fit_function = np.poly1d(fit)
-    trend_op = fit_function(x)
+        window_size = st.session_state.window_size
+        n_sma = np.convolve(close, np.ones(window_size)/window_size, mode='valid')
+        
+        x = np.arange(data[st.session_state.base_plot].size)
+        fit = np.polyfit(x, data[st.session_state.base_plot], deg=st.session_state.trend_degree)
+        fit_function = np.poly1d(fit)
+        trend_op = fit_function(x)
 
 
-    temp = np.zeros(close.size - n_sma.size) + np.nan
-    n_sma = np.append(temp, n_sma)
+        temp = np.zeros(close.size - n_sma.size) + np.nan
+        n_sma = np.append(temp, n_sma)
 
-    data.reset_index(inplace=True) 
-    data['n_sma'] = pd.Series(n_sma)
-    data['trend'] = pd.Series(trend_op)
-    data['ema'] = data[st.session_state.base_plot].ewm(span = window_size).mean()
-    data.set_index('Date', inplace=True)
+        data.reset_index(inplace=True) 
+        data['n_sma'] = pd.Series(n_sma)
+        data['trend'] = pd.Series(trend_op)
+        data['ema'] = data[st.session_state.base_plot].ewm(span = window_size).mean()
+        data.set_index('Date', inplace=True)
 
-    return data
+        return data
+    except:
+        st.error('Not enough data to display')
 
 
 if __name__ == "__main__":
