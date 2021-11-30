@@ -1,0 +1,10 @@
+---------------------------REFERENCES---------------------------
+1. streamlit documentation: https://docs.streamlit.io/
+2. MACD: https://www.youtube.com/watch?v=kz_NJERCgm8
+3. Convolution: https://numpy.org/doc/stable/reference/generated/numpy.convolve.html
+4. Candlestick chart: https://plotly.com/python/candlestick-charts/
+5. Implementation of RandomForest: https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html
+6. model.score: https://www.kaggle.com/getting-started/27261
+7. pandas ewm: https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.ewm.html
+8. pandas docs: https://pandas.pydata.org/docs/
+9. Lecture videos from brightspace
