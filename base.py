@@ -77,7 +77,7 @@ def main():
             # ENSURES THAT THE FROM DATE MEETS REQ. VALIDATION => SHOULD BE BETWEEN 2000/01/01 AND MAX(TODAY-32 DAYS, MIN DATE)
             from_date = st.date_input(  'From',
                                         value=max(date(2021,9,11), min_date),
-                                        min_value=date(2000,1,1),
+                                        min_value=max(date(2000,1,1), min_date),
                                         max_value=max(datetime.today() - timedelta(days=32), min_date))
             
         with COL_50_PERCENT_RIGHT:
@@ -89,42 +89,47 @@ def main():
 
 
     # ONCE THE DATA HAS BEEN DOWNLAODED AND FILTERED, PROCEED AHEAD
-    data = st.session_state.data.reset_index()
-    data = data[(data['Date'].dt.date>=from_date) & (pd.to_datetime(data['Date']).dt.date<=to_date)]    # FILTERING THE DATA AS PER THE DATE RANGE
-    data.set_index('Date', inplace=True)
-    company = st.session_state.company
-    #data.describe()
-
+    try:
+        data = st.session_state.data.reset_index()
+        data = data[(data['Date'].dt.date>=from_date) & (pd.to_datetime(data['Date']).dt.date<=to_date)]    # FILTERING THE DATA AS PER THE DATE RANGE
+        data.set_index('Date', inplace=True)
+        company = st.session_state.company
     
-    basic_information(data, company)                        # FETCHES & DISPLAYS BASIC DETAILS OF THE COMPANY LIKE LOGO, WEBSITE
+        #data.describe()
+
+        
+        basic_information(data, company)                        # FETCHES & DISPLAYS BASIC DETAILS OF THE COMPANY LIKE LOGO, WEBSITE
 
 
-    # MORE INFO EXPANDER
-    with st.expander('Read more info about the company'):
-        try:
-            try: website = f" For more info, visit: {company.info['website']}"
-            except: pass
-            st.write(company.info['longBusinessSummary'] + website)   # DISPLAYS LONG BUSINESS SUMMARY OF THE COMPANY
-        except:
-            st.write('No business info found.')             # DEFAULT MESSAGE IF THE INFO IS NOT PRESENT
-    
+        # MORE INFO EXPANDER
+        with st.expander('Read more info about the company'):
+            try:
+                try: website = f" For more info, visit: {company.info['website']}"
+                except: pass
+                st.write(company.info['longBusinessSummary'] + website)   # DISPLAYS LONG BUSINESS SUMMARY OF THE COMPANY
+            except:
+                st.write('No business info found.')             # DEFAULT MESSAGE IF THE INFO IS NOT PRESENT
+        
 
-    # DISPLAYS THE DESCRIPTIVE TABLE
-    with st.container():
-        """## FUNDAMENTAL ANALYSIS"""
-        st.table(overview(data))                            # SHOWS MEAN, MEDIAN, INTER QUARTILE RANGE (IQR) FOR VARIOUS METRICS
-        fundamental_analysis(company)                       # DISPLAYS FUNDAMENTAL (ANALYSIS) INFORMATION ABOUT THE COMPANY
+        # DISPLAYS THE DESCRIPTIVE TABLE
+        with st.container():
+            """## FUNDAMENTAL ANALYSIS"""
+            st.table(overview(data))                            # SHOWS MEAN, MEDIAN, INTER QUARTILE RANGE (IQR) FOR VARIOUS METRICS
+            fundamental_analysis(company)                       # DISPLAYS FUNDAMENTAL (ANALYSIS) INFORMATION ABOUT THE COMPANY
 
-    st.markdown("-----")
-    descriptive(data)                                       # PERFORMS DESCRIPTIVE ANALYSIS
-    
-    st.markdown("-----")
-    with st.container():
-        """### PREDICTIVE ANALYSIS"""
-        inferential()                                       # PERFORMS INFERENTIAL ANALYSIS
+        st.markdown("-----")
+        descriptive(data)                                       # PERFORMS DESCRIPTIVE ANALYSIS
+        
+        st.markdown("-----")
+        with st.container():
+            """### PREDICTIVE ANALYSIS"""
+            inferential()                                       # PERFORMS INFERENTIAL ANALYSIS
 
-    """### MACD & BUY-SELL Recommendation Graphs"""
-    macd_bs(data)
+        """### MACD & BUY-SELL Recommendation Graphs"""
+        macd_bs(data)
+
+    except:
+        st.error('Not enough data to do anything. Please select a wider date range.')
 
 
 def get_info(company, reqs: list):
@@ -147,22 +152,27 @@ def fundamental_analysis(company):
     COL_50_PERCENT_LEFT, COL_50_PERCENT_RIGHT = st.columns(2) # DEFINED 2 COLUMNS OF WIDTH 50% EACH
     with COL_50_PERCENT_LEFT:
         """### Business details"""
-        get_info(company, ['sector', 'industry'])
-        """### Margins"""
-        get_info(company, ['ebitdaMargins', 'profitMargins', 'revenueGrowth'])
+        try:    get_info(company, ['sector', 'industry'])
+        except: st.warning('No company business details found')
 
+        """### Margins"""
+        try:    get_info(company, ['ebitdaMargins', 'profitMargins', 'revenueGrowth'])
+        except: st.warning('No margins data found')
     
     with COL_50_PERCENT_RIGHT:
         """### Metrics"""
-        get_info(company, [ 'beta', 'pegRatio', 'trailingEPS', 'forwardEPS', 'revenuePerShare',
+        try:
+            get_info(company, [ 'beta', 'pegRatio', 'trailingEPS', 'forwardEPS', 'revenuePerShare',
                             'currentRatio', 'payoutRatio', 'trailingPE', 'forwardPE', 'marketCap',
                             'enterpriseValue'])
+        except:
+            st.warning('No metrics data found')
 
 
 def basic_information(data, company):
     COL_LEFT, COL_CENTER, COL_RIGHT = st.columns([2,4,2]) # DEFINED 2 COLUMNS OF WIDTH 33% AND 67% RESP.
     with COL_LEFT:
-        try:
+        try:                                        # Compute 1 Day growth (Close Price) from latest and Day-1 values
             st.metric(  label="1Day Growth",
             value=st.session_state.data['Close'][-1].round(2),
             delta=(st.session_state.data['Close'][-1] - st.session_state.data['Close'][-2]).round(2),
@@ -180,7 +190,7 @@ def basic_information(data, company):
         except: website = '#'
         try: logo = company.info['logo_url']
         except: logo = "#"
-        st.markdown(f"<a href='{website}'><img src='{logo}' alt='No logo found'></a>", unsafe_allow_html=True)
+        st.markdown(f"<a href='{website}'><img src='{logo}' alt='No logo found' style='width:75px, height:75px'></a>", unsafe_allow_html=True)
  
 @st.cache
 def overview(data):
