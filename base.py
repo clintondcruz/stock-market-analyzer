@@ -104,13 +104,15 @@ def main():
     #data.describe()
 
     
-    base_information(data, company)
+    basic_information(data, company)
 
 
     # MORE INFO EXPANDER
     with st.expander('Read more info about the company'):
         try:
-            st.write(company.info['longBusinessSummary'])   # DISPLAYS LONG BUSINESS SUMMARY OF THE COMPANY
+            try: website = f" For more info, visit: {company.info['website']}"
+            except: pass
+            st.write(company.info['longBusinessSummary'] + website)   # DISPLAYS LONG BUSINESS SUMMARY OF THE COMPANY
         except:
             st.write('No business info found.')             # DEFAULT MESSAGE IF THE INFO IS NOT PRESENT
     
@@ -135,7 +137,7 @@ def main():
             with COL_20_PERCENT:
                 st.number_input(value=1, label="Enter the value of (n)", on_change=handle_change, key="window", min_value=1, max_value=max(len(data)//4,1))     # WINDOW SIZE INPUT FOR N_SMA => RANGES FROM 1 TO 25% OF LENGTH OF DATA
                 st.number_input(value=1, label="Enter the degree of trendline", on_change=handle_change, key="degree", min_value=1, max_value=3)                # INPUT FOR DEGREE OF TREND LINE => RANGES FROM 1 TO 3
-                st.radio("Base plot-", ['Close', 'Adj Close'], on_change=handle_change, key='base')
+                st.radio("Base plot-", ['Close', 'Open'], on_change=handle_change, key='base')
                 st.radio("Plot base against-", ['n_sma', 'ema', 'trend'], on_change=handle_change, key='versus')
 
         with st.container():
@@ -162,7 +164,17 @@ def main():
         """### MACD & BUY-SELL Recommendation Graphs"""
         macd_bs(data)
     except:
-        st.error('Not enough data to display the buy/sell graph')
+        st.error('Not enough data to display the MACD or buy/sell graph')
+
+
+def get_info(company, reqs: list):
+    _ = {}
+    for req in reqs:
+        try:
+            _[req] = company.info[req]
+        except:
+            continue
+    st.table(pd.DataFrame(_, index=[0]).transpose())
 
 
 #st.cache(allow_output_mutation=True)
@@ -173,34 +185,24 @@ def fundamental_analysis(company):
     COL_50_PERCENT_LEFT, COL_50_PERCENT_RIGHT = st.columns(2) # DEFINED 2 COLUMNS OF WIDTH 50% EACH
     info = company.info # FETCHES STOCK RELATED INFORMATION FROM THE API
     with COL_50_PERCENT_LEFT:
-        st.table(   pd.DataFrame({
-                    'Information': [
-                        #info['sector'],
-                        info['marketCap']
-                    ]
-        }, index=['Sector', 'Market Cap']))
+        """### Business details"""
+        get_info(company, ['sector', 'industry'])
+        """### Margins"""
+        get_info(company, ['ebitdaMargins', 'profitMargins', 'revenueGrowth'])
 
     
     with COL_50_PERCENT_RIGHT:
-        st.table(   pd.DataFrame({
-                    'Financial metrics': [
-                        info['bookValue'],
-                        info['priceToBook'],
-                        (info['enterpriseValue']/10**6),
-                        info['pegRatio'],
-                        info['payoutRatio'],
-                        info['revenuePerShare'],
-                        info['marketCap']
-                    ]
-                }, index=['Book Value','P2B', 'Enterprise Value (M)', 'Peg Ratio', 'Payout Ratio', 'Revenue/Share', 'Market Cap.']))
+        """### Metrics"""
+        get_info(company, [ 'beta', 'pegRatio', 'trailingEPS', 'forwardEPS', 'revenuePerShare',
+                            'currentRatio', 'payoutRatio', 'trailingPE', 'forwardPE', 'marketCap',
+                            'enterpriseValue'])
 
 
-
-def base_information(data, company):
-    COL_33_PERCENT, COL_67_PERCENT = st.columns([1,2]) # DEFINED 2 COLUMNS OF WIDTH 33% AND 67% RESP.
-    with COL_33_PERCENT:
+def basic_information(data, company):
+    COL_LEFT, COL_CENTER, COL_RIGHT = st.columns([2,4,2]) # DEFINED 2 COLUMNS OF WIDTH 33% AND 67% RESP.
+    with COL_LEFT:
         try:
-            st.metric(  label="1Day Growth (Latest Close Price)",
+            st.metric(  label="1Day Growth",
             value=st.session_state.data['Close'][-1].round(2),
             delta=(st.session_state.data['Close'][-1] - st.session_state.data['Close'][-2]).round(2),
             delta_color="normal"
@@ -208,11 +210,16 @@ def base_information(data, company):
         except:
             st.write("#### Please enter a wider date range")
         
-    with COL_67_PERCENT:
-        st.write(f"{company.info['shortName']}, on {data.index[-1].date()} opened at *${data['Open'][-1].round(2)}* and closed at ${data['Close'][-1].round(2)}.\
-                    The total volume of stocks traded that day was {(data['Volume'][-1]/10**6).round(2)}M and the highest close price in the selected timeframe has been ${data['High'].round(2).max()}.")
+    with COL_CENTER:
+        st.write(f"{company.info['shortName']}, on {data.index[-1].date()} opened at ${data['Open'][-1].round(2)} and closed at ${data['Close'][-1].round(2)}.\
+                    The highest close price in the selected timeframe has been ${data['High'].round(2).max()}.")
 
-
+    with COL_RIGHT:
+        try: website = company.info['website']
+        except: website = '#'
+        try: logo = company.info['logo_url']
+        except: logo = '#'
+        st.markdown(f"<a href='{website}'><img src='{logo}'></a>", unsafe_allow_html=True)
 
 def macd_bs(data): 
     ShortEMA = data['Close'].ewm(span=12, adjust=False).mean()
@@ -282,7 +289,6 @@ def handle_change():
         st.session_state.trend_degree = st.session_state.degree
 
         
-
 @st.cache
 def descriptive(data):
     info = data.describe()[['Open', 'Close', 'Adj Close']].round(2).transpose()
@@ -295,12 +301,10 @@ def descriptive(data):
     return info
 
 
-#@st.cache(hash_funcs={dict: lambda _: None}, allow_output_mutation=True)
 def plot_graph(data):
     import plotly.express as px
     fig = px.line(data, x=data.index, y=[st.session_state.base_plot, st.session_state.plot_this])
     st.plotly_chart(fig, use_container_width=True)
-
 
 
 def plot_candlestick(data):
@@ -311,7 +315,6 @@ def plot_candlestick(data):
                 low=data.Low,
                 close=data.Close)])
     st.plotly_chart(fig, use_container_width=True)
-
 
 
 def base_graphs(data):
