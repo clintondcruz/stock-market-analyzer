@@ -11,7 +11,7 @@ from datetime import timedelta
 def inferential():
     COL_80_PERCENT, COL_20_PERCENT = st.columns([4,1])                          # DEFINED 2 COLUMNS OF WIDTH 80% AND 20% RESP.
     training_period_index = int(st.session_state['training_period'])            # FETCHING TRAINING PERIOD (LATST N-NUMBER OF ROWS FROM STOCK'S HISTORICAL DATA) FOR TRAINING THE MODEL
-    model, mae, rme, rmse, score = create_model(st.session_state.data, training_period_index)       # INITIALIZING A MODEL OBJECT AND SAVING THE EVALUATION METRICS
+    model, mae, rme, rmse, r_score = create_model(st.session_state.data, training_period_index)       # INITIALIZING A MODEL OBJECT AND SAVING THE EVALUATION METRICS
     fig, predicted_values = predict(model, st.session_state.data.tail(training_period_index), st.session_state['n_predictor'])  # PREDICTING FUTURE VALUES AND SAVING PLOT
 
     with COL_80_PERCENT:
@@ -20,7 +20,7 @@ def inferential():
     with COL_20_PERCENT:
         st.selectbox(label="Select training period (historic days)", options=[15, 30, 90, 180, 365, 730], index=0, on_change=handle_change, key="training_select")  # SELECTBOX FOR TRAINING PERIOD
         st.number_input(label="Predict for days (n)?", min_value=1, max_value=15, value=10, on_change=handle_change, key="predict_for_n")                           # VALUE FOR N (DAYS) FOR WHICH THE PREDICTION IS REQUIRED
-        st.table(pd.DataFrame({'Values': [mae,rme,rmse,score]
+        st.table(pd.DataFrame({'Values': [mae,rme,rmse,r_score]
         }, index=['Mean Absolute Err', 'Root Mean Err', 'RMSE', 'R Squared']))
 
     st.markdown("""### Future Projections""")
@@ -46,7 +46,8 @@ def train_model(x, y):
     mae = metrics.mean_absolute_error(y_test, pred_values)
     mse = metrics.mean_squared_error(y_test, pred_values)
     rmse = np.sqrt(metrics.mean_squared_error(y_test, pred_values))
-    return (model, mae, mse, rmse, model.score(x_train, y_train))
+    r_score = model.score(x_train, y_train)
+    return (model, mae, mse, rmse, r_score)
 
 
 # PREDICTING FUTURE VALUES BASIS OPEN, HIGH, LOW AND THE MODEL CREATED
