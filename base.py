@@ -1,14 +1,10 @@
 # Importing the required packages
-from pkg_resources import yield_lines
-import streamlit as st
-from streamlit.state.session_state import SessionState
-import yfinance as yf
-import pandas as pd
-#import matplotlib.gridspec as gridspec
+from typing import Container
+import streamlit as st, yfinance as yf
+import pandas as pd, numpy as np
 from datetime import datetime, date, timedelta
 from matplotlib import pyplot as plt
-import predictor as predictor
-import numpy as np
+from predictive import inferential              # imported a user-created package
 import plotly.express as xp
 
 
@@ -21,31 +17,31 @@ def read_ticker_list(file_name):
 
 def main():
     # DEFINING SESSION VARIABLES TO STORE DATA IN RUN-TIME
-    if "base_plot" not in st.session_state:
+    if "base_plot" not in st.session_state:     # USED TO STORE OUR BASE PLOT FOR THE N_SMA & TREND PLOT
         st.session_state['base_plot'] = "Close"
 
-    if "plot_this" not in st.session_state:
+    if "plot_this" not in st.session_state:     # USED TO STORE OUR SECONDARY DATAPOINT TO PLOT OVER OUR BASE
         st.session_state['plot_this'] = "n_sma"
 
-    if "window_size" not in st.session_state:
+    if "window_size" not in st.session_state:   # USED TO STORE THE WINDOW SIZE FOR N_SMA
         st.session_state['window_size'] = 1
     
-    if "n_predictor" not in st.session_state:
+    if "n_predictor" not in st.session_state:   # USED TO STORE THE NUMBER OF DAYS FOR WHICH PREDICTION IS REQ.
         st.session_state['n_predictor'] = 10
     
-    if "trend_degree" not in st.session_state:
+    if "trend_degree" not in st.session_state:  # USED TO STORE THE DEGREE OF TREND LINE
         st.session_state['trend_degree'] = 1
 
-    if "training_period" not in st.session_state:
+    if "training_period" not in st.session_state:   # USED TO STORE THE NUM DAYS (LAST N ROWS) OF TRAINING DATA
         st.session_state['training_period'] = 30
 
-    if "ticker" not in st.session_state:
+    if "ticker" not in st.session_state:        # USED TO STORE OUR TICKER SYMBOL FOR COMPARING OLD AND NEW (ON CHANGE)
         st.session_state['ticker'] = ''
 
-    if "data" not in st.session_state:
+    if "data" not in st.session_state:          # USED TO STORE OUR DOWNLOADED DATAFRAME
         st.session_state['data'] = None
 
-    if "company" not in st.session_state:
+    if "company" not in st.session_state:       # USED TO STORE INFO ABOUT THE COMPANY
         st.session_state.company = None
 
 
@@ -59,66 +55,125 @@ def main():
 
     # SIDEBAR FOR TICKER SYMBOL AND DATE RANGE SELECTOR
     with st.sidebar:
-        ticker_list = read_ticker_list('nasdaq_ticker_list.csv').to_list()
-        ticker = st.selectbox('Which stock do you want to search for?', options = ticker_list, index=0).split(" - ")[0]
+        ticker_list = read_ticker_list('nasdaq_ticker_list.csv').to_list()  # READS THE LIST OF TICKER SYMBOL FROM THE CSV FILE
+        ticker = st.selectbox('Which stock do you want to search for?', options = ticker_list, index=0).split(" - ")[0]     # USED TO FETCH THE TICKER SYMBOL FROM USER
 
         # CHECKING IF THE TICKER SYMBOL HAS CHANGED
-        # IF CHANGE IN TICKER => DOWNLOAD NEW DATASET AND APPLY THE DATE RANGE FILTER
+        # IF CHANGE IN TICKER SYMBOL => DOWNLOAD NEW DATASET AND SAVE THE INFO IN SESSION STATE
         # ELSE CONTINUE
         if st.session_state.ticker != ticker:
-            st.session_state.data = yf.download(ticker, period="max", progress=False)
-            st.session_state.company = yf.Ticker(ticker)
+            st.session_state.data = yf.download(ticker, period="max", progress=False)   # DOWNLOADS THE DATASET FROM YFINANCE
+            st.session_state.company = yf.Ticker(ticker)                                # FETCHES INFO ABOUT THE COMPANY
             print(f"downloaded new dataset for {ticker}")
-            st.session_state.ticker = ticker
+            st.session_state.ticker = ticker                                            # UPDATES TICKER SYMBOL IN THE SESSION VARIABLE
 
         dummy = st.session_state.data.reset_index()
-        min_date = dummy['Date'].iloc[0]
-        max_date = dummy['Date'].iloc[-1]
+        min_date = dummy['Date'].iloc[0]                                                # MIN DATE FOR VALIDATION (FIRST DATE FOR WHICH DATA IS AVAILABLE)
+        max_date = dummy['Date'].iloc[-1]                                               # MAX DATE FOR VALIDATION (LAST DATE FOR WHICH DATA IS AVAILABLE)
 
         COL_50_PERCENT_LEFT, COL_50_PERCENT_RIGHT = st.columns(2)
         with COL_50_PERCENT_LEFT:
+            # ENSURES THAT THE FROM DATE MEETS REQ. VALIDATION => SHOULD BE BETWEEN 2000/01/01 AND MAX(TODAY-32 DAYS, MIN DATE)
             from_date = st.date_input(  'From',
                                         value=max(date(2021,9,11), min_date),
                                         min_value=date(2000,1,1),
                                         max_value=max(datetime.today() - timedelta(days=32), min_date))
+            
         with COL_50_PERCENT_RIGHT:
+            # ENSURES THAT THE TO DATE MEETS REQ. VALIDATION => SHOULD BE BETWEEN (FROM DATE + 3 DAYS) TO MAX DATE
             to_date = st.date_input(    'To',
                                         value=max_date,
-                                        #min_value=from_date + timedelta(days=32),
                                         min_value=from_date + timedelta(days=3),
                                         max_value=max_date)
+        
 
+        st.markdown("""------------------------""")                                     # DISPLAYS A HORIZONTAL LINE
+        st.text_input(label="ADD A NEW SYMBOL", placeholder='New Ticker Symbol')        # TEXT INPUT FOR ADDING THE NEW SYMBOL
+        st.button('Add')                                                                # BUTTON TO TRIGGER SYMBOL ADDITION LOGIC =>
+                                                                                        # IF SYMBOL PRESENT THEN DO NOTHING
+                                                                                        # ELSE CHECK IF DATA FOR SPECIFIED SYMBOL EXISTS
+                                                                                            # IF EXISTS THEN ADD TO THE LIST
+                                                                                            # ELSE DISPLAY ERROR MESSAGE
 
-    
-    
 
     # ONCE THE DATA HAS BEEN DOWNLAODED AND FILTERED, PROCEED AHEAD
     data = st.session_state.data.reset_index()
-    data = data[(data['Date'].dt.date>=from_date) & (pd.to_datetime(data['Date']).dt.date<=to_date)]
+    data = data[(data['Date'].dt.date>=from_date) & (pd.to_datetime(data['Date']).dt.date<=to_date)]    # FILTERING THE DATA AS PER THE DATE RANGE
     data.set_index('Date', inplace=True)
     company = st.session_state.company
-    data.describe()
+    #data.describe()
 
     
-    base_descriptive(data, company)
+    base_information(data, company)
 
 
     # MORE INFO EXPANDER
     with st.expander('Read more info about the company'):
         try:
-            st.write(company.info['longBusinessSummary'])
+            st.write(company.info['longBusinessSummary'])   # DISPLAYS LONG BUSINESS SUMMARY OF THE COMPANY
         except:
-            st.write('No business info found.')
+            st.write('No business info found.')             # DEFAULT MESSAGE IF THE INFO IS NOT PRESENT
     
 
     # DISPLAYS THE DESCRIPTIVE TABLE
-    st.table(descriptive(data))
+    with st.container():
+        """## FUNDAMENTAL ANALYSIS"""
+        st.table(descriptive(data))                         # SHOWS MEAN, MEDIAN, INTER QUARTILE RANGE (IQR) FOR VARIOUS METRICS
+        fundamental_analysis(company)                       # DISPLAYS FUNDAMENTAL (ANALYSIS) INFORMATION ABOUT THE COMPANY
 
+    st.markdown("-----")
+
+    with st.container():
+        """## DESCRIPTIVE ANALYSIS"""
+        with st.container():
+            """### Moving averages and trend lines"""
+            COL_80_PERCENT, COL_20_PERCENT = st.columns([4,1])          # DEFINED 2 COLUMNS OF WIDTH 80% AND 20% RESP.
+            # PLOTTING SMA, TRENDLINE GRAPHS AGAINST CLOSE AND ADJ CLOSE
+            data = base_graphs(data)                                    # COMPUTES VALUES FOR VARIOUS METRICS TO BE PLOTTED
+            with COL_80_PERCENT:
+                    plot_graph(data)                                    # PLOTS THE GRAPH
+            with COL_20_PERCENT:
+                st.number_input(value=1, label="Enter the value of (n)", on_change=handle_change, key="window", min_value=1, max_value=max(len(data)//4,1))     # WINDOW SIZE INPUT FOR N_SMA => RANGES FROM 1 TO 25% OF LENGTH OF DATA
+                st.number_input(value=1, label="Enter the degree of trendline", on_change=handle_change, key="degree", min_value=1, max_value=3)                # INPUT FOR DEGREE OF TREND LINE => RANGES FROM 1 TO 3
+                st.radio("Base plot-", ['Close', 'Adj Close'], on_change=handle_change, key='base')
+                st.radio("Plot base against-", ['n_sma', 'ema', 'trend'], on_change=handle_change, key='versus')
+
+        with st.container():
+            """### Candle stick graph"""
+            try:
+                # CANDLE-STICK PLOT
+                plot_candlestick(data)
+            except:
+                st.error('Not enough data to display the candle stick graph')
+
+            """### Volume area graph (Volume in millions)"""
+            try:
+                # VOLUME AREA GRAPH
+                st.area_chart(data.Volume/10**6, use_container_width=True)
+            except:
+                st.error('Not enough data to display the area graph')
+
+    st.markdown("---------")
+    with st.container():
+        """### PREDICTIVE ANALYSIS"""
+        inferential()
+
+    try:
+        """### MACD & BUY-SELL Recommendation Graphs"""
+        macd_bs(data)
+    except:
+        st.error('Not enough data to display the buy/sell graph')
+
+
+#st.cache(allow_output_mutation=True)
+def fundamental_analysis(company):
+    # THIS SECTION DEALS WITH THE FUNDAMENTAL ANALYSIS OF THE STOCK FOR THE SELECTED TIME-PERIOD
+    # DISPLAYS VARIOUS METRICS WHICH ARE USED TO EVALUATE THE PRICE OF A STOCK
 
     COL_50_PERCENT_LEFT, COL_50_PERCENT_RIGHT = st.columns(2) # DEFINED 2 COLUMNS OF WIDTH 50% EACH
-    info = company.info
+    info = company.info # FETCHES STOCK RELATED INFORMATION FROM THE API
     with COL_50_PERCENT_LEFT:
-        st.write(   pd.DataFrame({
+        st.table(   pd.DataFrame({
                     'Information': [
                         #info['sector'],
                         info['marketCap']
@@ -127,7 +182,7 @@ def main():
 
     
     with COL_50_PERCENT_RIGHT:
-        st.write(   pd.DataFrame({
+        st.table(   pd.DataFrame({
                     'Financial metrics': [
                         info['bookValue'],
                         info['priceToBook'],
@@ -140,33 +195,8 @@ def main():
                 }, index=['Book Value','P2B', 'Enterprise Value (M)', 'Peg Ratio', 'Payout Ratio', 'Revenue/Share', 'Market Cap.']))
 
 
-    # PLOTTING SMA, TRENDLINE GRAPHS AGAINST CLOSE AND ADJ CLOSE
-    data = base_graphs(data)
-    COL_80_PERCENT, COL_20_PERCENT = st.columns([4,1]) # DEFINED 2 COLUMNS OF WIDTH 80% AND 20% RESP.
-    with COL_80_PERCENT:
-        plot_graph(data)
 
-    
-    with COL_20_PERCENT:
-        st.number_input(value=1, label="Enter the value of (n)", on_change=handle_change, key="window", min_value=1, max_value=max(len(data)//4,1))
-        st.number_input(value=1, label="Enter the degree of trendline", on_change=handle_change, key="degree", min_value=1, max_value=3)
-        st.radio("Base plot-", ['Close', 'Adj Close'], on_change=handle_change, key='base')
-        st.radio("Plot base against-", ['n_sma', 'ema', 'trend'], on_change=handle_change, key='versus')
-
-
-    # CANDLE-STICK PLOT
-    plot_candlestick(data)
-
-    st.bar_chart(data.Volume/10**6)
-
-    inferential()
-
-    #MACD
-    macd_bs(data)
-
-
-
-def base_descriptive(data, company):
+def base_information(data, company):
     COL_33_PERCENT, COL_67_PERCENT = st.columns([1,2]) # DEFINED 2 COLUMNS OF WIDTH 33% AND 67% RESP.
     with COL_33_PERCENT:
         try:
@@ -184,28 +214,9 @@ def base_descriptive(data, company):
 
 
 
-def inferential():
-    COL_80_PERCENT, COL_20_PERCENT = st.columns([4,1]) # DEFINED 2 COLUMNS OF WIDTH 80% AND 20% RESP.
-    training_period_index = int(st.session_state['training_period'])
-    model, mae, rme, rmse, score = create_model(st.session_state.data, training_period_index)
-    fig, temp = predict(model, st.session_state.data.tail(training_period_index), st.session_state['n_predictor'])
-
-    with COL_80_PERCENT:
-        st.write("### Predicting using Random Forest model")
-        st.plotly_chart(fig, use_container_width=True)
-    with COL_20_PERCENT:
-        st.selectbox(label="Select training period (historic days)", options=[15, 30, 90, 180, 365, 730], index=0, on_change=handle_change, key="training_select")
-        st.number_input(label="Predict for days (n)?", min_value=1, max_value=15, value=10, on_change=handle_change, key="predict_for_n")
-        st.table(pd.DataFrame({'Values': [mae,rme,rmse,score]
-        }, index=['Mean Absolute Err', 'Root Mean Err', 'RMSE', 'R Squared']))
-
-    st.table(temp[-1*int(st.session_state['n_predictor']):])
-
-
-
 def macd_bs(data): 
-    ShortEMA = data['Adj Close'].ewm(span=12, adjust=False).mean()
-    LongEMA = data['Adj Close'].ewm(span=26, adjust=False).mean()
+    ShortEMA = data['Close'].ewm(span=12, adjust=False).mean()
+    LongEMA = data['Close'].ewm(span=26, adjust=False).mean()
     MACD = ShortEMA - LongEMA
     signal = MACD.ewm(span = 9, adjust=False).mean()
 
@@ -241,82 +252,23 @@ def macd_bs(data):
                 Buy.append(np.nan)
         return(Buy, Sell)
 
-    a = buy_sell(data)
-    data['Buy_Signal_Price'] = a[0]
-    data['Sell_Signal_Price'] = a[1]
+    marker = buy_sell(data)
+    data['Buy_Signal_Price'] = marker[0]
+    data['Sell_Signal_Price'] = marker[1]
 
     
     buy_sell_graph = plt.figure(figsize = (12.2, 4.5))
     plt.scatter(data.index, data['Buy_Signal_Price'], label = 'Buy', color ="green",marker = '^', alpha =1)
     plt.scatter(data.index, data['Sell_Signal_Price'], label = 'Sell', color ="red",marker = 'v', alpha =1)
-    plt.plot(data['Close'], label = 'Close Price', alpha =0.36)
+    plt.plot(data['Close'], label = 'Close Price', alpha =0.7)
     plt.title("Close Price Buy & Sell Signals")
     plt.xlabel('Date')
     plt.xticks(rotation =45)
     plt.ylabel("Close Price USD ($)")
-    plt.legend(loc='upper left')
+    plt.legend(loc='upper center')
 
     # st.pyplot(MACD_graph)
     st.pyplot(buy_sell_graph)
-
-
-def predict(model, data, n):
-    import plotly.express as xp
-    sma_window = 7
-    required = data['Close']
-    num_rows = max(sma_window, n)
-
-    a1 = data['Open'].tail(num_rows).to_list()
-    for i in range(num_rows):
-        a1.append(sum(a1[-sma_window:])/(sma_window))
-
-    a2 = data['High'].tail(num_rows).to_list()
-    for i in range(num_rows):
-        a2.append(sum(a2[-sma_window:])/sma_window)
-
-    a3 = data['Low'].tail(num_rows).to_list()
-    for i in range(num_rows):
-        a3.append(sum(a3[-sma_window:])/sma_window)
-
-
-    base = data.index[-1]
-    dates = (data.index[-num_rows:]).to_list() + [base + timedelta(days=x) for x in range(1,num_rows+1)]
-
-    temp = pd.DataFrame({
-        'Date': dates,
-        'Open': a1,
-        'High': a2,
-        'Low': a3
-    })
-    temp.set_index('Date', inplace=True)
-    temp['Close'] = model.predict(temp[['Open', 'High', 'Low']])
-    
-    temp = temp[temp.index>base]
-    required = required.append(temp['Close'][:n])
-
-    fig = xp.line(required, x=required.index, y='Close', markers=True)
-    fig.update_layout(shapes=[
-        dict(
-        type= 'line',
-        yref= 'paper', y0 = 0, y1 = 1,
-        xref= 'x', x0= required.index[-n], x1= required.index[-n],
-        line = dict(
-            color='red',
-            width=1.5,
-            dash='dashdot'
-        )
-        )
-    ])
-
-    return (fig,temp)
-
-
-@st.experimental_singleton   # CACHING THE MODEL UNTIL THE INPUT PARAMEMTERS ARE CHANGED
-def create_model(data, n):
-    return predictor.train_model(y = data['Close'].tail(n),
-                                 x = data[['Open', 'High', 'Low']].tail(n)
-    )
-
 
 
 def handle_change():
@@ -328,10 +280,7 @@ def handle_change():
         st.session_state.window_size = st.session_state.window
     if st.session_state.degree:
         st.session_state.trend_degree = st.session_state.degree
-    if st.session_state.predict_for_n:
-        st.session_state.n_predictor = st.session_state.predict_for_n
-    if st.session_state.training_select:
-        st.session_state.training_period = st.session_state.training_select
+
         
 
 @st.cache
@@ -346,6 +295,7 @@ def descriptive(data):
     return info
 
 
+#@st.cache(hash_funcs={dict: lambda _: None}, allow_output_mutation=True)
 def plot_graph(data):
     import plotly.express as px
     fig = px.line(data, x=data.index, y=[st.session_state.base_plot, st.session_state.plot_this])
@@ -364,34 +314,29 @@ def plot_candlestick(data):
 
 
 
-#@st.cache(hash_funcs={dict: lambda _: None}, allow_output_mutation=True)
 def base_graphs(data):
-    try:
-        import numpy as np
+    close = data[st.session_state.base_plot].to_numpy()
+    close = close.astype(np.float)
 
-        close = data[st.session_state.base_plot].to_numpy()
-
-        window_size = st.session_state.window_size
-        n_sma = np.convolve(close, np.ones(window_size)/window_size, mode='valid')
-        
-        x = np.arange(data[st.session_state.base_plot].size)
-        fit = np.polyfit(x, data[st.session_state.base_plot], deg=st.session_state.trend_degree)
-        fit_function = np.poly1d(fit)
-        trend_op = fit_function(x)
+    window_size = st.session_state.window_size
+    n_sma = np.convolve(close, np.ones(window_size)/window_size, mode='valid')
+    
+    x = np.arange(data[st.session_state.base_plot].size)
+    fit = np.polyfit(x, data[st.session_state.base_plot], deg=st.session_state.trend_degree)
+    fit_function = np.poly1d(fit)
+    trend_op = fit_function(x)
 
 
-        temp = np.zeros(close.size - n_sma.size) + np.nan
-        n_sma = np.append(temp, n_sma)
+    temp = np.zeros(close.size - n_sma.size) + np.nan
+    n_sma = np.append(temp, n_sma)
 
-        data.reset_index(inplace=True) 
-        data['n_sma'] = pd.Series(n_sma)
-        data['trend'] = pd.Series(trend_op)
-        data['ema'] = data[st.session_state.base_plot].ewm(span = window_size).mean()
-        data.set_index('Date', inplace=True)
+    data.reset_index(inplace=True) 
+    data['n_sma'] = pd.Series(n_sma)
+    data['trend'] = pd.Series(trend_op)
+    data['ema'] = data[st.session_state.base_plot].ewm(span = window_size).mean()
+    data.set_index('Date', inplace=True)
 
-        return data
-    except:
-        st.error('Not enough data to display')
+    return data
 
 
 if __name__ == "__main__":
