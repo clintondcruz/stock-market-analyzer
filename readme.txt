@@ -12,7 +12,7 @@
 
 
 INSTALLING DEPENDENCIES--RUN EITHER OF THE TWO COMMANDS
-'pip install -r requirements.txt'                    	 # Manually installing dependencies
+'pip install -r requirements.txt'                    	 # Manually installing dependencies | Use --user option in case it requires additional permissions
 'run 'python main.py'                                	 # Automatically installing dependencies
 
 
