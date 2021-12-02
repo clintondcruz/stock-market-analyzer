@@ -78,7 +78,7 @@ def main():
             from_date = st.date_input(  'From',
                                         value=max(date(2021,9,11), min_date),
                                         min_value=max(date(2000,1,1), min_date),
-                                        max_value=max(datetime.today() - timedelta(days=3), min_date))
+                                        max_value=max(datetime.today() - timedelta(days=4), min_date))
             
         with COL_50_PERCENT_RIGHT:
             # ENSURES THAT THE TO DATE MEETS REQ. VALIDATION => SHOULD BE BETWEEN (FROM DATE + 3 DAYS) TO MAX DATE
